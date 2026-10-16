@@ -250,14 +250,21 @@ class ChatBackend:
                     yield token
             except Exception as e:
                 err_str = str(e)
-                if "ConnectError" in err_str or "11434" in err_str or "Failed to connect" in err_str:
+                is_conn_err = (
+                    "connect" in err_str.lower()
+                    or "refused" in err_str.lower()
+                    or "11434" in err_str
+                    or "111" in err_str
+                )
+                if is_conn_err and not self.groq_api_key:
                     fallback_msg = (
-                        "⚠️ **Cannot connect to local Ollama on Streamlit Cloud.**\n\n"
-                        "Because this app is running on Streamlit's cloud servers, your laptop's local `http://localhost:11434` is not accessible.\n\n"
-                        "**To fix this instantly in the Cloud (100% Free):**\n"
-                        "1. Get a free API key at [console.groq.com/keys](https://console.groq.com/keys)\n"
-                        "2. Paste it in the **'🔑 Cloud API Key'** box in the left sidebar\n"
-                        "3. Your chatbot will immediately start working using the same Llama 3.2 model in the cloud!"
+                        "⚠️ **Ollama is not reachable on this cloud server.**\n\n"
+                        "Streamlit Cloud runs on a remote Linux server where your laptop's local `http://localhost:11434` is not accessible.\n\n"
+                        "👉 **To start chatting in the cloud for free:**\n"
+                        "1. Go to [console.groq.com/keys](https://console.groq.com/keys) (100% free, no credit card required).\n"
+                        "2. Click **'Create API Key'** and copy it (`gsk_...`).\n"
+                        "3. Open the **'☁️ Cloud Mode'** box in the left sidebar and paste your key.\n\n"
+                        "Your chatbot will immediately start answering using the same Llama 3.2 model!"
                     )
                     yield fallback_msg
                     return

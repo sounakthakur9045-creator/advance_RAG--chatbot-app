@@ -469,6 +469,12 @@ with col_header_right:
                 st.rerun()
 
 # ---------------------------------------------------------
+# Cloud Warning Banner if running on Cloud without API key
+# ---------------------------------------------------------
+if os.name != "nt" and not st.session_state.groq_api_key:
+    st.info("☁️ **Running on Streamlit Cloud:** Local Ollama is not installed on cloud servers. Paste your free **Groq API Key** in the left sidebar under **☁️ Cloud Mode** to enable responses!", icon="💡")
+
+# ---------------------------------------------------------
 # Welcome Screen (when chat is empty)
 # ---------------------------------------------------------
 suggestion_clicked = None
