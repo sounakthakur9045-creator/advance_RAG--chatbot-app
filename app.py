@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 from datetime import datetime
 from backend import ChatBackend
@@ -79,18 +80,15 @@ st.markdown(f"""
         font-family: 'Inter', sans-serif;
     }}
 
-    /* Hide standard deploy button for cleaner ChatGPT look */
     .stDeployButton {{
         display: none !important;
     }}
 
-    /* Main background */
     .stApp {{
         background-color: {colors["bg_app"]} !important;
         color: {colors["text_primary"]} !important;
     }}
 
-    /* Give ample top padding so header is NEVER clipped */
     .block-container {{
         padding-top: 4.5rem !important;
         padding-bottom: 5.5rem !important;
@@ -98,7 +96,6 @@ st.markdown(f"""
         margin: 0 auto !important;
     }}
 
-    /* Sidebar Styling */
     section[data-testid="stSidebar"] {{
         background-color: {colors["bg_sidebar"]} !important;
         border-right: 1px solid {colors["border"]} !important;
@@ -110,7 +107,6 @@ st.markdown(f"""
         padding-right: 1rem !important;
     }}
 
-    /* Primary Buttons */
     div.stButton > button[kind="primary"] {{
         background: {colors["accent"]} !important;
         color: #ffffff !important;
@@ -127,7 +123,6 @@ st.markdown(f"""
         box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25) !important;
     }}
 
-    /* Secondary / Default Buttons */
     div.stButton > button {{
         background-color: {colors["bg_card"]} !important;
         color: {colors["text_primary"]} !important;
@@ -141,7 +136,6 @@ st.markdown(f"""
         color: {colors["accent"]} !important;
     }}
 
-    /* Chat Session List Items in Sidebar */
     .chat-nav-btn > div.stButton > button {{
         text-align: left !important;
         justify-content: flex-start !important;
@@ -187,7 +181,6 @@ st.markdown(f"""
         border-radius: 6px !important;
     }}
 
-    /* Modern Top Header Card */
     .top-header-card {{
         background-color: {colors["bg_header"]};
         border: 1px solid {colors["border"]};
@@ -243,7 +236,6 @@ st.markdown(f"""
         box-shadow: 0 0 6px {colors["dot_color"]};
     }}
 
-    /* Chat Messages Styling */
     [data-testid="stChatMessage"] {{
         background-color: {colors["bg_chat_asst"]} !important;
         border: 1px solid {colors["border"]} !important;
@@ -257,7 +249,6 @@ st.markdown(f"""
         color: {colors["text_primary"]} !important;
     }}
 
-    /* Welcome Hero Section */
     .hero-box {{
         text-align: center;
         padding: 3rem 1rem 2rem 1rem;
@@ -277,7 +268,6 @@ st.markdown(f"""
         margin: 0 auto 2rem auto;
     }}
 
-    /* Expanders for RAG context */
     div[data-testid="stExpander"] {{
         background-color: {colors["bg_expander"]} !important;
         border: 1px solid {colors["border"]} !important;
@@ -291,7 +281,6 @@ st.markdown(f"""
         font-size: 0.85rem !important;
     }}
 
-    /* Chat input styling */
     [data-testid="stChatInput"] {{
         background-color: {colors["input_bg"]} !important;
         border-color: {colors["border"]} !important;
@@ -304,13 +293,26 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
+# API Key Discovery (Secrets -> Session State -> Env)
+# ---------------------------------------------------------
+groq_key_secret = ""
+try:
+    if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
+        groq_key_secret = st.secrets["GROQ_API_KEY"]
+except Exception:
+    pass
+
+if "groq_api_key" not in st.session_state:
+    st.session_state.groq_api_key = groq_key_secret or os.getenv("GROQ_API_KEY", "")
+
+# ---------------------------------------------------------
 # Backend Initialization (Cached)
 # ---------------------------------------------------------
 @st.cache_resource(show_spinner="Initializing RAG Pipeline & Vector DB...")
-def load_backend():
-    return ChatBackend()
+def load_backend(key):
+    return ChatBackend(groq_api_key=key if key else None)
 
-backend = load_backend()
+backend = load_backend(st.session_state.groq_api_key)
 
 # ---------------------------------------------------------
 # Session State Setup
@@ -333,7 +335,7 @@ if "retrieval_metadata" not in st.session_state:
 # ---------------------------------------------------------
 with st.sidebar:
     st.markdown(f"<h3 style='margin-bottom: 0.2rem; font-weight: 700; color: {colors['text_primary']};'>ChatGPT</h3>", unsafe_allow_html=True)
-    st.markdown(f"<p style='font-size: 0.8rem; color: {colors['text_muted']}; margin-top: -6px; margin-bottom: 1rem;'>Local RAG Assistant • Ollama + Chroma</p>", unsafe_allow_html=True)
+    st.markdown(f"<p style='font-size: 0.8rem; color: {colors['text_muted']}; margin-top: -6px; margin-bottom: 1rem;'>Local & Cloud RAG Assistant</p>", unsafe_allow_html=True)
 
     # Top Controls: Theme Switcher & New Chat button
     col_theme, col_new = st.columns([0.45, 0.55])
@@ -349,6 +351,31 @@ with st.sidebar:
             st.session_state.current_session_id = new_id
             st.session_state.messages = []
             st.rerun()
+
+    # Cloud / Groq API Key Setting
+    with st.expander("☁️ Cloud Mode (Free Groq Key)", expanded=not bool(st.session_state.groq_api_key)):
+        st.markdown(
+            f"<p style='font-size:0.75rem; color:{colors['text_muted']}; margin-bottom:6px;'>"
+            "When running on Streamlit Cloud, enter a free Groq API key to power responses without local Ollama:"
+            "</p>", 
+            unsafe_allow_html=True
+        )
+        entered_key = st.text_input(
+            "Groq API Key", 
+            value=st.session_state.groq_api_key, 
+            type="password", 
+            placeholder="gsk_...",
+            label_visibility="collapsed"
+        )
+        if entered_key != st.session_state.groq_api_key:
+            st.session_state.groq_api_key = entered_key
+            st.cache_resource.clear()
+            st.rerun()
+            
+        st.markdown(
+            f"<p style='font-size:0.75rem; margin-top:4px;'><a href='https://console.groq.com/keys' target='_blank' style='color:{colors['accent']};'>Get a free Groq key in 10s ↗</a></p>", 
+            unsafe_allow_html=True
+        )
 
     st.markdown(f"<hr style='border: none; border-top: 1px solid {colors['border']}; margin: 1rem 0;'>", unsafe_allow_html=True)
     st.markdown(f"<p style='font-size: 0.74rem; font-weight: 700; color: {colors['text_muted']}; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem;'>Previous Chats</p>", unsafe_allow_html=True)
@@ -395,8 +422,8 @@ with st.sidebar:
     st.markdown(f"""
     <div style='background: {colors["bg_card"]}; padding: 0.85rem; border-radius: 10px; border: 1px solid {colors["border"]}; font-size: 0.78rem;'>
         <div style='display:flex; justify-content:space-between; margin-bottom:6px;'>
-            <span style='color: {colors["text_muted"]};'>Model</span>
-            <span style='color: {colors["text_primary"]}; font-weight:600;'>llama3.2:3b</span>
+            <span style='color: {colors["text_muted"]};'>Engine</span>
+            <span style='color: {colors["text_primary"]}; font-weight:600;'>{backend.provider}</span>
         </div>
         <div style='display:flex; justify-content:space-between; margin-bottom:6px;'>
             <span style='color: {colors["text_muted"]};'>Vector DB</span>
@@ -410,7 +437,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# Main Top Header Bar (High Visibility & Never Cut Off)
+# Main Top Header Bar
 # ---------------------------------------------------------
 current_meta = next((s for s in sessions if s["id"] == st.session_state.current_session_id), None)
 current_title = current_meta["title"] if current_meta else "Chat"
@@ -426,13 +453,12 @@ with col_header_left:
         </div>
         <div class="model-badge">
             <span class="model-dot"></span>
-            <span>llama3.2:3b</span>
+            <span>{backend.provider}</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
 with col_header_right:
-    # Rename button positioned cleanly aligned with header
     st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
     with st.popover("✏️ Rename Chat", use_container_width=True):
         st.markdown(f"<p style='font-weight:600; font-size:0.9rem; color:{colors['text_primary']}; margin-bottom:4px;'>Edit Title</p>", unsafe_allow_html=True)
@@ -477,7 +503,6 @@ for idx, msg in enumerate(st.session_state.messages):
     with st.chat_message(role, avatar=avatar):
         st.markdown(msg["content"])
         
-        # Display retrieval drawer if metadata exists for this response
         meta_key = f"{st.session_state.current_session_id}_{idx}"
         if meta_key in st.session_state.retrieval_metadata:
             meta = st.session_state.retrieval_metadata[meta_key]
@@ -498,12 +523,10 @@ user_input = st.chat_input("Message ChatGPT...")
 prompt_to_process = suggestion_clicked or user_input
 
 if prompt_to_process:
-    # 1. Append user message to state
     st.session_state.messages.append({"role": "user", "content": prompt_to_process})
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt_to_process)
 
-    # 2. Assistant response preparation and streaming
     with st.chat_message("assistant", avatar="🤖"):
         standalone_q, chunks, stream_gen = backend.prepare_chat_turn(
             session_id=st.session_state.current_session_id,
@@ -511,10 +534,8 @@ if prompt_to_process:
             history_messages=st.session_state.messages[:-1]
         )
         
-        # Stream response token by token
         response_text = st.write_stream(stream_gen)
         
-        # Save retrieval metadata for this assistant response
         resp_idx = len(st.session_state.messages)
         meta_key = f"{st.session_state.current_session_id}_{resp_idx}"
         st.session_state.retrieval_metadata[meta_key] = {
@@ -522,7 +543,6 @@ if prompt_to_process:
             "chunks": chunks
         }
         
-        # Expandable drawer
         with st.expander("🔍 Retrieved Memory & Standalone Query", expanded=False):
             st.markdown(f"**Standalone Query:** `{standalone_q}`")
             if chunks:
@@ -532,8 +552,5 @@ if prompt_to_process:
             else:
                 st.caption("No prior context chunks were retrieved.")
 
-    # 3. Append assistant response to messages state
     st.session_state.messages.append({"role": "assistant", "content": response_text})
-    
-    # Rerun to refresh sidebar and titles
     st.rerun()

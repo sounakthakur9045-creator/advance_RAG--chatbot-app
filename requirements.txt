@@ -2,6 +2,7 @@ langchain-core
 langchain-huggingface
 langchain-chroma
 langchain-ollama
+langchain-openai
 sentence-transformers
 python-dotenv
 streamlit

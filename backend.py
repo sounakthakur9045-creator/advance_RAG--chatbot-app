@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 load_dotenv()
@@ -15,12 +16,23 @@ PERSIST_DIR = "database/chroma_db"
 SESSIONS_FILE = "database/sessions_meta.json"
 
 class ChatBackend:
-    def __init__(self, model_name: str = "llama3.2:3b", embedding_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
+    def __init__(self, model_name: str = "llama3.2:3b", embedding_name: str = "sentence-transformers/all-MiniLM-L6-v2", groq_api_key: str = None):
         self.model_name = model_name
         self.embedding_name = embedding_name
+        self.groq_api_key = groq_api_key or os.getenv("GROQ_API_KEY")
         
-        # Initialize LLM
-        self.llm = ChatOllama(model=self.model_name, temperature=0)
+        # Initialize LLM based on environment / key availability
+        if self.groq_api_key:
+            self.llm = ChatOpenAI(
+                base_url="https://api.groq.com/openai/v1",
+                api_key=self.groq_api_key,
+                model="llama-3.2-3b-preview",
+                temperature=0
+            )
+            self.provider = "Groq Cloud (llama-3.2-3b)"
+        else:
+            self.llm = ChatOllama(model=self.model_name, temperature=0)
+            self.provider = "Ollama Local (llama3.2:3b)"
         
         # Initialize Embeddings & Chroma DB
         self.embedding_model = HuggingFaceEmbeddings(model_name=self.embedding_name)
@@ -133,11 +145,9 @@ class ChatBackend:
         Returns a list of {"role": "user"|"assistant", "content": ...}
         """
         meta = self._get_session_meta()
-        # If stored in session metadata with messages, use that
         if session_id in meta and meta[session_id].get("messages"):
             return meta[session_id]["messages"]
 
-        # Otherwise load and parse from Chroma DB
         messages = []
         try:
             res = self.db._collection.get(
@@ -158,7 +168,6 @@ class ChatBackend:
                     messages.append({"role": "user", "content": user_text})
                     messages.append({"role": "assistant", "content": bot_text})
             
-            # Cache parsed messages into meta for persistent fast ordering
             if session_id in meta and messages:
                 meta[session_id]["messages"] = messages
                 self._save_session_meta(meta)
@@ -183,21 +192,28 @@ class ChatBackend:
         User Message: {user_question}
         Standalone Output:"""
 
-        standalone_question = self.llm.invoke(rephrase_prompt).content.strip()
-        return standalone_question
+        try:
+            standalone_question = self.llm.invoke(rephrase_prompt).content.strip()
+            return standalone_question
+        except Exception:
+            return user_question
 
     def retrieve_context(self, session_id: str, standalone_question: str) -> Tuple[List[str], str]:
         """
         Retrieves relevant chunks from Chroma DB for the current session.
         """
-        retriever = self.db.as_retriever(
-            search_type="similarity",
-            search_kwargs={"k": 5, "filter": {"session_id": session_id}}
-        )
-        relevant_chunks = retriever.invoke(standalone_question)
-        chunks_text = [chunk.page_content for chunk in relevant_chunks]
-        context = "\n".join(chunks_text)
-        return chunks_text, context
+        try:
+            retriever = self.db.as_retriever(
+                search_type="similarity",
+                search_kwargs={"k": 5, "filter": {"session_id": session_id}}
+            )
+            relevant_chunks = retriever.invoke(standalone_question)
+            chunks_text = [chunk.page_content for chunk in relevant_chunks]
+            context = "\n".join(chunks_text)
+            return chunks_text, context
+        except Exception as e:
+            print(f"Error in vector retrieval: {e}")
+            return [], ""
 
     def prepare_chat_turn(
         self,
@@ -206,8 +222,7 @@ class ChatBackend:
         history_messages: List[Dict[str, str]]
     ) -> Tuple[str, List[str], Generator[str, None, None]]:
         """
-        Prepares standalone query and retrieved context once, then returns:
-        (standalone_question, chunks, stream_generator)
+        Prepares standalone query, retrieves context, and handles streaming with graceful cloud fallback.
         """
         # Step 1: Standalone query rephrasing
         standalone_question = self.get_standalone_question(user_question, history_messages)
@@ -225,21 +240,41 @@ class ChatBackend:
             HumanMessage(content=standalone_question)
         ]
 
-        # Step 4: Stream Generator that saves upon completion
+        # Step 4: Stream Generator with connection handling
         def stream_generator():
             full_answer = ""
-            for chunk in self.llm.stream(message_final):
-                token = chunk.content
-                full_answer += token
-                yield token
+            try:
+                for chunk in self.llm.stream(message_final):
+                    token = chunk.content
+                    full_answer += token
+                    yield token
+            except Exception as e:
+                err_str = str(e)
+                if "ConnectError" in err_str or "11434" in err_str or "Failed to connect" in err_str:
+                    fallback_msg = (
+                        "⚠️ **Cannot connect to local Ollama on Streamlit Cloud.**\n\n"
+                        "Because this app is running on Streamlit's cloud servers, your laptop's local `http://localhost:11434` is not accessible.\n\n"
+                        "**To fix this instantly in the Cloud (100% Free):**\n"
+                        "1. Get a free API key at [console.groq.com/keys](https://console.groq.com/keys)\n"
+                        "2. Paste it in the **'🔑 Cloud API Key'** box in the left sidebar\n"
+                        "3. Your chatbot will immediately start working using the same Llama 3.2 model in the cloud!"
+                    )
+                    yield fallback_msg
+                    return
+                else:
+                    yield f"⚠️ Error: {err_str}"
+                    return
 
-            # Step 5: Save interaction to Chroma DB (identical to retrieval_pipeline.py)
-            self.db.add_texts(
-                texts=[f"user : {standalone_question} | Bot : {full_answer}"],
-                metadatas=[{"session_id": session_id}]
-            )
+            # Save interaction to Chroma DB
+            try:
+                self.db.add_texts(
+                    texts=[f"user : {standalone_question} | Bot : {full_answer}"],
+                    metadatas=[{"session_id": session_id}]
+                )
+            except Exception as e:
+                print(f"Error saving to Chroma: {e}")
 
-            # Update session messages and title in metadata
+            # Update metadata
             meta = self._get_session_meta()
             if session_id not in meta:
                 meta[session_id] = {
@@ -256,7 +291,6 @@ class ChatBackend:
             meta[session_id]["messages"].append({"role": "user", "content": user_question})
             meta[session_id]["messages"].append({"role": "assistant", "content": full_answer})
             
-            # Auto-title if default or new
             curr_title = meta[session_id].get("title", "")
             if curr_title in ["New Chat", "default", ""] or curr_title.startswith("chat_"):
                 meta[session_id]["title"] = user_question[:28] + ("..." if len(user_question) > 28 else "")
