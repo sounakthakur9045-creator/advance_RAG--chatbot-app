@@ -352,6 +352,18 @@ with st.sidebar:
             st.session_state.messages = []
             st.rerun()
 
+    # Custom Session ID Connector (Match terminal retrieval_pipeline behavior)
+    with st.popover("🔑 Custom Session ID", use_container_width=True):
+        st.markdown(f"<p style='font-size:0.8rem; font-weight:600; color:{colors['text_primary']}; margin-bottom:4px;'>Join or Create by ID</p>", unsafe_allow_html=True)
+        custom_id_input = st.text_input("Enter Session ID", placeholder="e.g. sounak info", label_visibility="collapsed")
+        if st.button("Open Session", use_container_width=True, type="primary"):
+            if custom_id_input.strip():
+                clean_id = custom_id_input.strip()
+                backend.create_session(title=clean_id, session_id=clean_id)
+                st.session_state.current_session_id = clean_id
+                st.session_state.messages = backend.load_session_history(clean_id)
+                st.rerun()
+
     # Cloud / Groq API Key Setting
     with st.expander("☁️ Cloud Mode (Free Groq Key)", expanded=not bool(st.session_state.groq_api_key)):
         st.markdown(

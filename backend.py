@@ -27,7 +27,8 @@ class ChatBackend:
                 base_url="https://api.groq.com/openai/v1",
                 api_key=self.groq_api_key,
                 model="qwen/qwen3.8-27b",
-                temperature=0
+                temperature=0,
+                max_tokens=600
             )
             self.provider = "Groq Cloud (Qwen 27B)"
         else:
@@ -250,6 +251,10 @@ class ChatBackend:
                     yield token
             except Exception as e:
                 err_str = str(e)
+                if "429" in err_str or "rate_limit" in err_str.lower() or "too large" in err_str.lower():
+                    yield "⚠️ **Free Tier Rate Limit**: Groq is currently processing requests. Please wait a few seconds and try again."
+                    return
+
                 is_conn_err = (
                     "connect" in err_str.lower()
                     or "refused" in err_str.lower()
