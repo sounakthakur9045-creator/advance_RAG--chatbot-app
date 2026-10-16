@@ -26,10 +26,10 @@ class ChatBackend:
             self.llm = ChatOpenAI(
                 base_url="https://api.groq.com/openai/v1",
                 api_key=self.groq_api_key,
-                model="llama-3.3-70b-versatile",
+                model="qwen/qwen3.8-27b",
                 temperature=0
             )
-            self.provider = "Groq Cloud (Llama 3.3 70B)"
+            self.provider = "Groq Cloud (Qwen 27B)"
         else:
             self.llm = ChatOllama(model=self.model_name, temperature=0)
             self.provider = "Ollama Local (llama3.2:3b)"
