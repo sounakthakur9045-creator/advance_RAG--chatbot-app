@@ -1,6 +1,11 @@
 # Advance RAG Chatbot App
 
-A modern, high-performance ChatGPT-style local RAG (Retrieval-Augmented Generation) application built with **Streamlit**, **LangChain**, **Chroma Vector DB**, and **Ollama (Llama 3.2)**.
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://advancerag--chatbot-app-syyzc4dk3atyzcdebcqse5.streamlit.app/)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-Repository-blue?logo=github)](https://github.com/sounakthakur9045-creator/advance_RAG--chatbot-app)
+
+> 🌐 **Live Web Application**: [advancerag--chatbot-app-syyzc4dk3atyzcdebcqse5.streamlit.app](https://advancerag--chatbot-app-syyzc4dk3atyzcdebcqse5.streamlit.app/)
+
+A modern, high-performance ChatGPT-style local & cloud RAG (Retrieval-Augmented Generation) application built with **Streamlit**, **LangChain**, **Chroma Vector DB**, **Ollama (Llama 3.2)**, and **Groq (Qwen 27B)**.
 
 ---
 
